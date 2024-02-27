@@ -63,6 +63,26 @@ class Player_Split(Player):
 class Dealer(Player):
     '''Dealer class to emulate the dealers current hand. Inherits'''
     def __init__(self):
-        self.current_hand = []
-        self.hand_values = []
-        self.hand_best_value = 0
+        super().__init__("Dealer", 0)
+        # self.current_hand = []
+        # self.hand_values = []
+        # self.hand_best_value = 0
+        self.stand_threshold = 17  # Dealer stands on 17 or above
+
+    # Override the player_hit method for the dealer
+    def player_hit(self, game):
+        # Dealer hits until their hand value is 17 or above
+        while self.hand_best_value < self.stand_threshold:
+            new_card = game.deal_card(self)
+            game.inputoutput.hit(new_card, game.deck_obj, self)
+            game.update_hand_values(self)  # Update dealer's hand values
+            # Check if dealer busts
+            if min(self.hand_values) > 21:
+                game.inputoutput.bust()  # Display bust message
+                break  # Exit loop if dealer busts
+
+    # Override the update_hand_values method for the dealer
+    def update_hand_values(self, game):
+        self.hand_values = game.get_player_value(self.current_hand)
+        # Dealer's best hand value is the highest value not exceeding 21
+        self.hand_best_value = max(value for value in self.hand_values if value <= 21)

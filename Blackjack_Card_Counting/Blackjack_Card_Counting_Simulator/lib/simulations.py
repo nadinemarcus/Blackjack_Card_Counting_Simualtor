@@ -4,6 +4,7 @@ import numpy as np
 from .modelling import plot_hands
 from .modelling import plot_distr
 from .blackjack import Blackjack
+from card_count import Card_Counter
 
 # Option to modify:
 # * Num players
@@ -39,6 +40,7 @@ def simulate_game(blackjack, num_rounds):
 
         blackjack.play_round()
 
+    blackjack.card_counter.update_count()
     running_count = blackjack.card_counter.running_count
     true_count = blackjack.card_counter.true_count
     bust_probability = blackjack.card_counter.calculate_bust_probability(running_count)

@@ -2,12 +2,11 @@ import os
 import numpy as np
 from PIL import Image, ImageTk
 import tkinter as tk
-from tkinter import Button, Label, Entry
-from tkinter import messagebox
+from tkinter import Button, Label
 from blackjack import Blackjack
 from card_count import Card_Counter
 
-class Main(tk.Tk):
+class BlackjackSimulator(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Blackjack Simulator with Card Counting")
@@ -31,6 +30,7 @@ class Main(tk.Tk):
         self.surrenderButton = None
         self.insuranceButton = None
         
+        self.counting_enabled = False  # Flag to enable/disable card counting
         self.init_gui()
         self.blackjack_game = Blackjack(players=["Player 1"])
         self.card_counter = Card_Counter(self.blackjack_game, total_decks=6, strategy_name='hi_lo')
@@ -48,20 +48,16 @@ class Main(tk.Tk):
         self.play_blackjack_round()
 
     def play_blackjack_round(self):
-        # Play a round of blackjack
         self.blackjack_game.play_round()
 
-        # Update card counting metrics
         dealer_card, player_cards = self.get_current_hands()
         self.update_count(dealer_card)
         for card_value in player_cards:
             self.update_count(card_value)
 
-        # Display current hands and card counting metrics
         self.display_current_hands(dealer_card, player_cards)
         self.display_count()
 
-        # Calculate bust probability and display or log the result
         bust_probability = self.card_counter.calculate_bust_probability(self.running_count)
         self.bustProbLabel.config(text=f"Bust Probability: {bust_probability}")
 
@@ -71,25 +67,9 @@ class Main(tk.Tk):
             self.actionButton.config(state=tk.NORMAL)
 
     def trigger_player_action(self, action):
-        # Implement logic to trigger player actions based on your visual buttons
-        # For example, you can use a variable to store the player's action and
-        # update it when the corresponding button is clicked.
-        # Then, call the appropriate player action method based on that variable.
-        # Store the clicked button for later use
         self.clicked_button = action
-        # Disable buttons after clicking to prevent multiple clicks
         self.disable_buttons()
-        # Call the appropriate player action method based on the button clicked
         self.blackjack_game.player_action(action)
-
-    def trigger_dealer_play(self):
-        # Implement logic to trigger dealer play
-        dealer_score = self.blackjack_game.dealer.score
-        while dealer_score < 17:
-            self.blackjack_game.dealer_hit()
-            dealer_score = self.blackjack_game.dealer.score
-        # Once the dealer has finished playing, you can proceed with the end of the round logic
-        self.end_round()
 
     def get_current_hands(self):
         dealer_hand = self.blackjack_game.dealer.current_hand
@@ -102,8 +82,9 @@ class Main(tk.Tk):
 
     def display_count(self):
         self.countLabel.config(text=f"Running Count: {self.running_count}")
-        self.valueLabel.config(text=f"Score: {self.card_counter.score}")
-        self.scoreLabel.config(text=f"Number of Cards Shown: {self.card_counter.count}")
+        if self.counting_enabled:
+            self.valueLabel.config(text=f"Count: {self.card_counter.score}")
+            self.scoreLabel.config(text=f"Number of Cards Shown: {self.card_counter.count}")
 
     def update_count(self, card_value):
         self.card_counter.update_count(card_value)
@@ -126,10 +107,9 @@ class Main(tk.Tk):
         self.dealerLabel = Label(self, text="Dealer's Hand:")
         self.playerLabel = Label(self, text="Player's Hand:")
         self.countLabel = Label(self, text=f"Running Count: {self.running_count}")
-        self.valueLabel = Label(self, text=f"Count: {self.score}")
-        self.scoreLabel = Label(self, text=f"Number of Cards Shown: {self.count}")
-        self.cardPanel = Label(self)
-        self.bustProbLabel = Label(self, text=f"Bust Probability: {self.bust}")  # Label to display bust probability
+        self.valueLabel = Label(self)
+        self.scoreLabel = Label(self)
+        self.bustProbLabel = Label(self) 
 
         self.actionButton.pack()
         self.dealerLabel.pack()
@@ -137,55 +117,42 @@ class Main(tk.Tk):
         self.countLabel.pack()
         self.valueLabel.pack()
         self.scoreLabel.pack()
-        self.bustProbLabel.pack()  # Pack the bust probability label
-        self.cardPanel.pack()
+        self.bustProbLabel.pack()
 
-        # Add buttons for player actions
-        self.hitButton = Button(self, text="HIT", command=self.player_hit)
-        self.hitButton.pack()
+        self.hitButton = Button(self, text="HIT", command=lambda: self.trigger_player_action("HIT"))
+        self.hitButton.pack(side=tk.LEFT)
 
-        self.standButton = Button(self, text="STAND", command=self.player_stand)
-        self.standButton.pack()
+        self.standButton = Button(self, text="STAND", command=lambda: self.trigger_player_action("STAND"))
+        self.standButton.pack(side=tk.LEFT)
 
-        self.doubleDownButton = Button(self, text="DOUBLE DOWN", command=self.player_double_down)
-        self.doubleDownButton.pack()
+        self.doubleDownButton = Button(self, text="DOUBLE DOWN", command=lambda: self.trigger_player_action("DOUBLE_DOWN"))
+        self.doubleDownButton.pack(side=tk.LEFT)
 
-        self.splitButton = Button(self, text="SPLIT", command=self.player_split)
-        self.splitButton.pack()
+        self.splitButton = Button(self, text="SPLIT", command=lambda: self.trigger_player_action("SPLIT"))
+        self.splitButton.pack(side=tk.LEFT)
 
-        self.surrenderButton = Button(self, text="SURRENDER", command=self.player_surrender)
-        self.surrenderButton.pack()
+        self.surrenderButton = Button(self, text="SURRENDER", command=lambda: self.trigger_player_action("SURRENDER"))
+        self.surrenderButton.pack(side=tk.LEFT)
 
-        self.insuranceButton = Button(self, text="INSURANCE", command=self.player_insurance)
-        self.insuranceButton.pack()
+        self.insuranceButton = Button(self, text="INSURANCE", command=lambda: self.trigger_player_action("INSURANCE"))
+        self.insuranceButton.pack(side=tk.LEFT)
 
-    # Define methods to handle player moves
-    def player_hit(self):
-        self.blackjack_game.player_action("HIT")
-        self.trigger_dealer_play()
+        self.toggleCountingButton = Button(self, text="Enable Card Counting", command=self.toggle_counting)
+        self.toggleCountingButton.pack()
 
-    def player_stand(self):
-        self.blackjack_game.player_action("STAND")
-        self.trigger_dealer_play()
+    def toggle_counting(self):
+        if self.counting_enabled:
+            self.counting_enabled = False
+            self.toggleCountingButton.config(text="Enable Card Counting")
+            self.valueLabel.config(text="")
+            self.scoreLabel.config(text="")
+        else:
+            self.counting_enabled = True
+            self.toggleCountingButton.config(text="Disable Card Counting")
+            self.valueLabel.config(text="Count: 0")
+            self.scoreLabel.config(text="Number of Cards Shown: 0")
 
-    def player_double_down(self):
-        self.blackjack_game.player_action("DOUBLE_DOWN")
-        self.trigger_dealer_play()
-
-    def player_split(self):
-        self.blackjack_game.player_action("SPLIT")
-        self.trigger_dealer_play()
-
-    def player_surrender(self):
-        self.blackjack_game.player_action("SURRENDER")
-        self.trigger_dealer_play()
-
-    def player_insurance(self):
-        self.blackjack_game.player_action("INSURANCE")
-        self.trigger_dealer_play()
-        
     def disable_buttons(self):
-        # Disable all player action buttons
         self.hitButton.config(state=tk.DISABLED)
         self.standButton.config(state=tk.DISABLED)
         self.doubleDownButton.config(state=tk.DISABLED)
@@ -194,4 +161,4 @@ class Main(tk.Tk):
         self.insuranceButton.config(state=tk.DISABLED)
 
 if __name__ == "__main__":
-    Main().mainloop()
+    BlackjackSimulator().mainloop()

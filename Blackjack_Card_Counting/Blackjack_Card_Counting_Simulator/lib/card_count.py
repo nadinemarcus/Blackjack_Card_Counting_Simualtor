@@ -47,6 +47,8 @@ class Card_Counter():
 
         self.value_of_each_hand_observed = value_of_each_hand_observed  # OPP
         self.num_players = num_players
+        self.score = 0
+        self.count = 0
 
         if strategy_name is None:
             if custom_strategy is None:
@@ -74,12 +76,14 @@ class Card_Counter():
         
         
 
-    def next_card(self, card):
+    def next_card(self, cards):
+        if isinstance(cards, int):
+            cards = [cards]
         # Update local copy of deck
-        self.local_deck.append(card)
+        self.local_deck.extend(cards)
 
         # Run all desired card counting strategies
-        self.update_count(card)
+        self.update_count(cards)
 
         # Get strategy bet
         self.get_suggested_bet()
@@ -91,7 +95,7 @@ class Card_Counter():
         self.num_cards = self.total_decks*52
         self.num_hands_seen = 0
 
-    def update_count(self, card, num_decks=None):
+    def update_count(self, cards, num_decks=None):
         # Keep a running count dependent on strategy and vary bets based on
         # running total and number of decks left in play
         # The higher the count, the more high cards the deck has left, the
@@ -101,20 +105,21 @@ class Card_Counter():
         # Don Schlesinger's Illiustrious 18 with most important here:
         # https://wizardofodds.com/games/blackjack/card-counting/high-low/
 
-        card_val = card % 13
+        for card in cards:
+            card_val = card % 13
 
-        # Update the count according to the strategy
-        self.running_count += self.strategy[card_val]
+            # Update the count according to the strategy
+            self.running_count += self.strategy[card_val]
 
-        # Hi lo uses true count so update that
-        self.num_cards -= 1  # number of cards left in deck
-        self.num_decks = self.num_cards/52  # number of decks left as a float
+            # Hi lo uses true count so update that
+            self.num_cards -= 1  # number of cards left in deck
+            self.num_decks = self.num_cards/52  # number of decks left as a float
 
-        self.true_count = self.running_count / self.num_decks  # true count
+            self.true_count = self.running_count / self.num_decks  # true count
 
-        # Num of hands for opp and other strategies. Players + dealer each turn
-        self.num_hands_seen += (self.value_of_each_hand_observed *
-                                (self.num_players+1))
+            # Num of hands for opp and other strategies. Players + dealer each turn
+            self.num_hands_seen += (self.value_of_each_hand_observed *
+                                    (self.num_players+1))
 
     def get_suggested_bet(self):
         # Hi lo is the most well known strategy. Bet based on True Count.
@@ -202,12 +207,17 @@ class Card_Counter():
         # much can expect to win/lose
 
     def calculate_bust_probability(self, running_count):
+        # Define the threshold values for stand and hit
+        self.stand_threshold = 17
+        self.hit_threshold = 0  # Adjust this threshold based on your strategy
+
         # Assume a simple linear relationship between running count and bust probability
         # You may need to fine-tune this based on your specific strategy and simulation results
         if self.hit_threshold == 0:
             return 0 
         bust_probability = max(0, (running_count - self.stand_threshold) / (self.hit_threshold - self.stand_threshold))
         return bust_probability
+
         
 if __name__ == "__main__":
     Main().mainloop()
