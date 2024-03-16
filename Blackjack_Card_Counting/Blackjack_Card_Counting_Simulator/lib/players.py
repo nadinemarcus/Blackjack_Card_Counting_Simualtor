@@ -9,7 +9,9 @@ class Player():
         self.hand_values = []
         self.hand_best_value = 0
         self.insurance_bet = 0
-
+        
+        self.busted = False
+        self.blackjack = False
         self.children = []
 
     def update_bankroll(self, cash_to_add):
@@ -27,6 +29,21 @@ class Player():
     def reset_children(self):
         self.children = []
 
+    def place_bet(self, bet_amount):
+        if bet_amount <= self.bankroll:
+            self.bet = bet_amount
+            self.bankroll -= bet_amount
+        else:
+            print(f"Not enough bankroll. Current bankroll: {self.bankroll}")
+
+    def update_hand_values(self, game):
+        self.hand_values = game.get_player_value(self.current_hand)
+        if self.hand_values > 21:
+            self.busted = True
+        elif self.hand_values == 21:
+            self.blackjack = True
+        # Dealer's best hand value is the highest value not exceeding 21
+        self.hand_best_value = max(value for value in self.hand_values if value < 21)        
 
 class Player_Split(Player):
     '''Player Split class emulates player after splitting a hand. Inherits
@@ -47,6 +64,9 @@ class Player_Split(Player):
         self.hand_best_value = player_parent.hand_best_value
         self.insurance_bet = 0
 
+        self.blackjack = False
+        self.busted = False
+        
     def update_bankroll(self, cash_to_add):
         self.player_parent.update_bankroll(cash_to_add)  # Update prnt broll
 
@@ -64,11 +84,13 @@ class Dealer(Player):
     '''Dealer class to emulate the dealers current hand. Inherits'''
     def __init__(self):
         super().__init__("Dealer", 0)
-        # self.current_hand = []
-        # self.hand_values = []
-        # self.hand_best_value = 0
+        self.current_hand = []
+        self.hand_values = []
+        self.hand_best_value = 0
         self.stand_threshold = 17  # Dealer stands on 17 or above
-
+        self.busted = False
+        self.blackjack = False
+        
     # Override the player_hit method for the dealer
     def player_hit(self, game):
         # Dealer hits until their hand value is 17 or above
@@ -84,5 +106,9 @@ class Dealer(Player):
     # Override the update_hand_values method for the dealer
     def update_hand_values(self, game):
         self.hand_values = game.get_player_value(self.current_hand)
+        if self.hand_values > 21:
+            self.busted = True
+        elif self.hand_values == 21:
+            self.blackjack = True
         # Dealer's best hand value is the highest value not exceeding 21
         self.hand_best_value = max(value for value in self.hand_values if value <= 21)

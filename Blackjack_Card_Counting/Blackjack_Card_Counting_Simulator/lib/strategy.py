@@ -86,12 +86,12 @@ class BasicStrategy():
 
     def get_move(self, player, dealer):
         dealer_card = self.get_dealer_card(dealer)
-
         # Check whether player has splitable hand
         if len(player.current_hand) == 2 and \
                 player.current_hand[0] % 13 == player.current_hand[1] % 13:
             player_card = self.get_player_card(player.current_hand[0])
             hand = player_card + ',' + player_card
+            print(hand, player_card)
         elif len(player.hand_values) > 1:  # Check if player has an ace
             # Hand value [1] will always be 1 ace at 11, rest at 1.
             # e.g. A-2-A treated like an ace-3
@@ -108,18 +108,19 @@ class BasicStrategy():
         return self.basicstrategy_dic[hand][dealer_card]
 
     def get_dealer_card(self, dealer):
-        dealer_card = dealer.current_hand[0] % 13
-
-        if dealer_card == 0:  # Ace
-            return 11
-        elif dealer_card < 9:  # Number card
-            return dealer_card+1
+        if dealer.current_hand:  # Check if the dealer's hand is not empty
+            dealer_card = dealer.current_hand[0] % 13
+            if dealer_card == 0:  # Ace
+                return 11
+            elif dealer_card < 9:  # Number card
+                return dealer_card + 1
+            else:
+                return 10  # 10, J, Q, K
         else:
-            return 10  # 10, J, Q, K
-
+            return None 
+        
     def get_player_card(self, card):
         player_card = card % 13
-
         if player_card == 0:  # Ace
             return 'A'
         elif player_card < 9:  # Number card

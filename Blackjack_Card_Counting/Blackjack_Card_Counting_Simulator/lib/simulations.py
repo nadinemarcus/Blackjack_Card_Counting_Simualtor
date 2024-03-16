@@ -3,6 +3,7 @@ import numpy as np
 
 from .modelling import plot_hands
 from .modelling import plot_distr
+from .modelling import plot_true_count_vs_outcome
 from .blackjack import Blackjack
 from card_count import Card_Counter
 
@@ -37,7 +38,8 @@ def simulate_game(blackjack, num_rounds):
             if i % ax_freq == 0:  # Only take ~2000 data points to plot
                 arr_bankroll[j].append(blackjack.players[j].bankroll)
                 hand_num[j].append(i+1)
-
+            
+            
         blackjack.play_round()
 
     blackjack.card_counter.update_count()
@@ -81,6 +83,10 @@ def simulate_games(args, showfig=False):
                 args.bet_spread, args.bankroll)
 
     final_bankrolls = {player: [] for player in players}
+    true_counts = []
+    bet_sizes = []
+    outcomes = []  # 1 for win, 0 for loss
+
     for _ in range(num_sims):
         # Initiate the Blackjack game object
         blackjack = Blackjack(players=players,
@@ -113,7 +119,9 @@ def simulate_games(args, showfig=False):
         # Add player's final bankrolls to dic
         for player in blackjack.players:
             final_bankrolls[player.name].append(player.bankroll)
-
+        true_counts.append(blackjack.card_counter.true_count)
+        bet_sizes.append(blackjack.card_counter.get_suggested_bet())
+        outcomes.append(outcome)
     # Compute mean of each player and mean overall
     mean_bankrolls = {player: np.mean(final_bankrolls[player])
                       for player in players}
@@ -132,6 +140,8 @@ def simulate_games(args, showfig=False):
     plot_distr(final_bankrolls, mean_bankrolls, std_bankrolls, mean_bankroll,
                std_bankroll, params, player_advantage, showfig)
 
+    plot_true_count_vs_outcome(true_counts, bet_sizes, outcomes)
+    
     for player in players:
         print('Mean final bankroll for {} was ${:,.2f}'
               .format(player, mean_bankrolls[player]))

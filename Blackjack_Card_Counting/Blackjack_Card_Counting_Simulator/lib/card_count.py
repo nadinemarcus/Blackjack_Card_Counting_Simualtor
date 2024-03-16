@@ -49,7 +49,9 @@ class Card_Counter():
         self.num_players = num_players
         self.score = 0
         self.count = 0
-
+        self.cards_shown = 0
+        self.true_count = 0
+        
         if strategy_name is None:
             if custom_strategy is None:
                 raise ValueError('No strategy or custom value strategy \
@@ -77,15 +79,16 @@ class Card_Counter():
         
 
     def next_card(self, cards):
+        self.cards_shown+=1
         if isinstance(cards, int):
             cards = [cards]
-        # Update local copy of deck
-        self.local_deck.extend(cards)
+        for card in cards:
+            # Assuming card represents the index directly and mapping it to values
+            card_value = self.blackjack_game.deck_obj.get_card_value(card)
+            self.local_deck.append(card)
+            # Update the count with the correct card value
+            self.update_count([card_value]) 
 
-        # Run all desired card counting strategies
-        self.update_count(cards)
-
-        # Get strategy bet
         self.get_suggested_bet()
 
     def deck_refreshed(self):
@@ -104,21 +107,23 @@ class Card_Counter():
         # knowing higher chance of low card
         # Don Schlesinger's Illiustrious 18 with most important here:
         # https://wizardofodds.com/games/blackjack/card-counting/high-low/
-
+        if not isinstance(cards, list):
+            cards = [cards] 
         for card in cards:
             card_val = card % 13
-
-            # Update the count according to the strategy
+            self.count = self.strategy[card_val]
             self.running_count += self.strategy[card_val]
-
-            # Hi lo uses true count so update that
-            self.num_cards -= 1  # number of cards left in deck
-            self.num_decks = self.num_cards/52  # number of decks left as a float
-
-            self.true_count = self.running_count / self.num_decks  # true count
-
-            # Num of hands for opp and other strategies. Players + dealer each turn
-            self.num_hands_seen += (self.value_of_each_hand_observed *
+            print(f'card: {card}, card_val: {self.count}, running count: {self.running_count}')
+        
+        # Hi lo uses true count so update that
+        self.num_cards -= len(cards) # number of cards left in deck
+        if num_decks is not None:
+            self.num_decks = num_decks
+        else:
+            self.num_decks = self.num_cards / 52         
+        
+        self.true_count = self.running_count / self.num_decks  # true count
+        self.num_hands_seen += (self.value_of_each_hand_observed *
                                     (self.num_players+1))
 
     def get_suggested_bet(self):

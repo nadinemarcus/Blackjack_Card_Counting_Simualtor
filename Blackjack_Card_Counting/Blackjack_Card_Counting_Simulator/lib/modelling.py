@@ -114,3 +114,46 @@ def plot_distr(data, means, stds, mean, std, params, player_advantage,
 
     if not showfig:
         plt.close(fig)
+
+        
+def plot_true_count_vs_outcome(true_counts, bet_sizes, outcomes, showfig=False):
+    """
+    Plot the relationship between the true count, bet size, and outcome (win/loss).
+
+    :param true_counts: List of true counts at the time of each bet.
+    :param bet_sizes: List of bet sizes corresponding to each true count.
+    :param outcomes: List of outcomes (1 for win, 0 for loss) for each bet.
+    :param showfig: Whether to display the figure (True) or save and close (False).
+    """
+    if not showfig:
+        plt.ioff()
+
+    plt.figure(figsize=(12, 8))
+
+    # Convert outcomes to a numpy array for easy manipulation
+    outcomes = np.array(outcomes)
+    win_mask = outcomes == 1
+    loss_mask = np.invert(win_mask)
+
+    # Scatter plot for wins and losses
+    plt.scatter(np.array(true_counts)[win_mask], np.array(bet_sizes)[win_mask], c='green', label='Win', alpha=0.5)
+    plt.scatter(np.array(true_counts)[loss_mask], np.array(bet_sizes)[loss_mask], c='red', label='Loss', alpha=0.5)
+
+    plt.title('True Count vs Bet Size and Outcome', fontsize=20)
+    plt.xlabel('True Count', fontsize=16)
+    plt.ylabel('Bet Size', fontsize=16)
+    plt.legend(fontsize=14)
+    plt.grid(True)
+
+    # Optional: Highlight "hot" decks with a background color
+    plt.axvspan(xmin=2, xmax=max(true_counts), color='yellow', alpha=0.1, label='Hot Deck Zone')
+    plt.legend()
+
+    # Saving or showing the figure
+    fig_loc = 'Figures' + os.sep
+    file_name = 'true_count_vs_outcome.png'
+    plt.savefig('{}{}'.format(fig_loc, file_name), bbox_inches='tight')
+    print('Graph saved to {}'.format(fig_loc))
+
+    if not showfig:
+        plt.close()

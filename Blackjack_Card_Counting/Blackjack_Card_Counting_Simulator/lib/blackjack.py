@@ -1,19 +1,27 @@
+import os
+import numpy as np
+from PIL import Image, ImageTk
+import tkinter as tk
+from tkinter import Button, Label, Entry
+from tkinter import messagebox
+
+from BlackjackInterface import BlackjackInterface
+from bj_io import InputOutput
+from card_count import Card_Counter
+from players import *
+from formatting import colour
 import random
 
-from formatting import colour
-from bj_io import InputOutput
-from players import *
-from card_count import Card_Counter
-from strategy import BasicStrategy
-# Imports are slightly messy due to creation in Jupyter - could refactor
 
-
-class Deck():
+class Deck:
     '''Deck class used to store and manipulate a data type emulating a
     playing card deck'''
     def __init__(self, num_of_decks=1):
-        self.deck = [i % 52 for i in range(num_of_decks*52)]
+        self.deck = [i % 52 for i in range(num_of_decks * 52)]
         self.discard_deck = []
+        self.cards = []
+        
+        self.pils = []
 
     def shuffle(self):
         random.shuffle(self.deck)
@@ -26,29 +34,66 @@ class Deck():
 
     def card_suit(self, num):
         suits = {0: 'Hearts', 1: 'Diamonds', 2: 'Clubs', 3: 'Spades'}
-        return suits[num//13]
+        return suits[num // 13]
 
     def new_card_suit(self, num):
         suits = {0: '\u2665',  # Hearts
                  1: '\u2662',  # Diamonds
                  2: '\u2663',  # Clubs
                  3: '\u2664'}  # Spades
-        return suits[num//13]
+        return suits[num // 13]
+    
+    def get_pils_image(self, ind):
+        return self.pils[ind]
+    
+    def get_card_image(self, ind):
+        return self.cards[ind]
 
-    def read_card(self, num, formatted=True):
-        # For use  in Jupyter or console able to show fontweights only
-        if formatted:
-            if (self.card_suit(num) in ['Hearts', 'Diamonds']):
-                col_text = colour.RED + colour.BOLD
-            else:
-                col_text = colour.BOLD
-        return col_text + self.card_num_or_face(num) + ' of ' + \
-            self.new_card_suit(num) + colour.END
+    def get_card_value(self, card_index):
+        # Assuming card_index is the position of the card in a sorted deck from 0 to 51
+        # where 0-12 are Aces to Kings of hearts, 13-25 are Aces to Kings of diamonds, etc.
+        if card_index in [48,49,50,51]:
+            rank = 0
+        else:
+            rank = card_index // 4 + 1
+        # Now, map this rank to the game's value
+        if rank == 0: # Ace
+            return 11 # or 1, depending on how you want to treat it
+        elif 1 <= rank <= 9: # Number cards
+            return rank + 1 # Adding one because ranks start at 0
+        else: # Face cards
+            return 10 # Jack, Queen, King
+
+    def load_cards(self):
+        card_values = {
+            0: 'Ace', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6',
+            6: '7', 7: '8', 8: '9', 9: '10', 10: 'Jack',
+            11: 'Queen', 12: 'King'
+        }
+
+        self.cards = []
+        ranks = [str(rank) for rank in range(2, 11)] + ['jack', 'queen', 'y_king', 'z_ace']
+        suits = ['clubs', 'diamonds', 'hearts', 'spades']
+
+        # Create a mapping of card names to images
+        self.card_images = {}
+
+        for rank in ranks:
+            for suit in suits:
+                img_path = os.path.join("classic-cards", f"{rank}_of_{suit}.png")
+                img = Image.open(img_path)
+                img = img.resize((100, 150))
+                self.pils.append(img)
+                self.cards.append(ImageTk.PhotoImage(img))
+                
+                # Map the card name to the image object
+                self.card_images[f"{rank}_of_{suit}"] = img
+
+        # Now the deck is populated with PhotoImage objects in the same order as card_values
+        return self.cards
 
 
-class Blackjack():
-    '''Blackjack game simulator. Default ruleset is based off of a liberal
-    Vegas shoe but customisable'''
+class Blackjack:
     def __init__(self, players, num_of_decks=6,
                  blackjack_payout=1.5, win_payout=1, push_payout=0,
                  loss_payout=-1, surrender_payout=-0.5,
@@ -57,30 +102,35 @@ class Blackjack():
                  late_surrender=True, early_surrender=False,
                  player_bankroll=1000, reshuffle_penetration=0.75,
                  human_player=True, print_to_terminal=True,
-                 min_bet=1, bet_spread=8,
+                 min_bet=25, bet_spread=8,
                  dealer_peeks_for_bj=False,
                  strategy_name='hi_lo'):
 
+        self.blackjack_interface = None
+        self.simulator_interface = None
+        self.blackjack_game = None
+        self.deck_obj = Deck(num_of_decks)
+        self.deck_obj.cards = self.deck_obj.load_cards()
+        
+        self.remaining_cards = {value: num_of_decks*4 for value in range(2,11)}
+        self.remaining_cards[1] = num_of_decks*4
+        self.remaining_cards[10] *= 4
+        
         self.num_of_decks = num_of_decks
         self.human_player = human_player
-        self.print_to_terminal = print_to_terminal
-
         self.min_bet = min_bet
         self.bet_spread = bet_spread
-
         self.dealer_peeks_for_bj = dealer_peeks_for_bj
         self.strategy_name = strategy_name
-
         self.round = 0
-
-        # Initiate deck object
-        self.deck_obj = Deck(num_of_decks)
-
+        self.hand_number = 0
+        self.turn_complete = False
+        
         # Create player objects for each player
         self.players = []
         for i, player_name in enumerate(players):
-            self.players.append(Player(name=player_name, num=i+1,
-                                bankroll=player_bankroll))
+            self.players.append(Player(name=player_name, num=i + 1,
+                                        bankroll=player_bankroll))
 
         # Card counting class to initiate
         self.card_counter = Card_Counter(self, total_decks=self.num_of_decks,
@@ -90,8 +140,7 @@ class Blackjack():
                                          num_players=len(self.players))
 
         # Initiate input/output means
-        self.inputoutput = InputOutput(self.card_counter,
-                                       print_to_terminal=print_to_terminal)
+        self.inputoutput = InputOutput(self, self.card_counter, self.simulator_interface)
 
         # Create dealer object
         self.dealer = Dealer()
@@ -118,6 +167,25 @@ class Blackjack():
         if shuffle_deck:
             self.shuffle()
 
+    def initialize_game(self):
+        if self.blackjack_game is not None:
+            raise ValueError("Game is already initialized.")
+
+        # Deal initial cards to players and dealer
+        for _ in range(2):  # Deal two cards to each player and the dealer
+            self.deal_card(self.dealer)
+            self.deal_card(self.players[0])
+
+        if self.dealer_peeks_for_bj and \
+           self.dealer.hand_best_value == 'Blackjack':
+            pass
+        '''else:
+            # 7. Players are prompted on move
+            for i, player in enumerate(self.players):
+                self.player_play(player, i)'''
+                
+        return self
+    
     def shuffle(self, discard_top_card=True, re_add_discard_deck=False):
         if re_add_discard_deck:  # Add discard deck back
             for _ in range(len(self.deck_obj.discard_deck)):
@@ -128,92 +196,66 @@ class Blackjack():
         if discard_top_card:  # Discard top card
             self.deck_obj.discard_deck.append(self.deck_obj.deck.pop())
 
-    def display_deck(self):
-        for card in self.deck_obj.deck:
-            print(self.deck_obj.read_card(card))
-            
-    def take_bets(self):
+    
+    '''def take_bets(self):
         # Method to handle the betting phase of the game
         for player in self.players:
-            player.bet = player.place_bet()
+            player.bet = player.place_bet()'''
 
     def deal_card(self, player, update_values=True):
-        # Deal new card
-        new_card = self.deck_obj.deck.pop()
-        player.current_hand.append(new_card)
-
-        # Update hand values
+        new_card_index = self.deck_obj.deck.pop()  
+        new_card_value = self.deck_obj.get_card_value(new_card_index)
+        player.current_hand.append(new_card_index)  
+        player.hand_values.append(new_card_value)
+        
+        if new_card_value in self.remaining_cards:
+            self.remaining_cards[new_card_value] -= 1
+            
         if update_values:
             self.update_hand_values(player)
 
-        # Send new card to card_counter class
-        self.card_counter.next_card(new_card)
+        self.blackjack_interface.card_counter.next_card(new_card_index)
 
-        return new_card
+        return new_card_index
+    
 
     def update_hand_values(self, player):
         player.hand_values = self.get_player_value(player.current_hand)
+        print(f"{player.name}: {player.current_hand}, {player.hand_values}")
         player.hand_best_value = self.best_player_value(player)
 
     def is_blackjack(self, card1, card2):
         if (card1 < 0) or (card2 < 0):  # If ace in value calc
             return False
-        card1_value = card1 % 13
-        card2_value = card2 % 13
+        card1_value = self.deck_obj.get_card_value(card1)
+        card2_value = self.deck_obj.get_card_value(card2)
 
         # Ace = 0, 10-King = 9-12
         condition = \
-            ((card1_value == 0 and card2_value >= 9 and card2_value <= 12) or
-             (card2_value == 0 and card1_value >= 9 and card1_value <= 12))
-        if condition:
-            return True
-        return False
+            ((card1_value == 0 and 9 <= card2_value <= 13) or
+             (card2_value == 0 and 9 <= card1_value <= 13))
+        return condition
 
-    def get_player_value(self, player_hand, first_run=True):
-        if len(player_hand) > 1:
-            if self.is_blackjack(player_hand[0], player_hand[1]):
-                return 'Blackjack'
-
-        if first_run:
-            # Store as list so can have multiple if soft values.
-            # Class variable for recursion
-            self.player_values = []
-
-        player_value = 0
-        for i, card in enumerate(player_hand):
-            card_value = card % 13
-            if card_value == 0:  # Ace
-                new_hand_1 = player_hand.copy()
-                new_hand_2 = player_hand.copy()
-
-                new_hand_1[i] = -1  # Ace as 1
-                new_hand_2[i] = -2  # Ace as 11
-
-                self.get_player_value(new_hand_1, first_run=False)
-                self.get_player_value(new_hand_2, first_run=False)
-
-                break
+    def get_player_value(self, player_hand):
+        total = 0
+        aces = 0
+        for card in player_hand:
+            card_value = self.deck_obj.get_card_value(card)
+            if card_value == 11:  # Ace
+                aces += 1
+                total += card_value
             else:
-                if card == -1:  # Then this is soft 1 ace
-                    card_value = 1
-                elif card == -2:  # Then this is soft 11 ace
-                    card_value = 11
-                elif card_value >= 9:  # Then this is 10 or face card
-                    card_value = 10
-                else:  # Any other card increment by 1 for correct number
-                    card_value += 1
-
-                player_value += card_value
-        else:  # If there wasn't a 0 signifying un-declared Ace then append
-            self.player_values.append(player_value)
-
-        if first_run:
-            return self.player_values
+                total += card_value
+        # Consider Ace as 1 if using it as 11 would cause the total > 21
+        while total > 21 and aces:
+            total -= 10
+            aces -= 1
+        return [total]
 
     def best_player_value(self, player):
         # If Blackjack
-        if player.hand_values == 'Blackjack':
-            return player.hand_values
+        if 'Blackjack' in player.hand_values:
+            return 'Blackjack'
 
         # If only 1 then return value
         if len(player.hand_values) == 1:
@@ -237,59 +279,45 @@ class Blackjack():
 
         # Soft values
         for value in dealer_value:
-            if value >= self.dealer_stand_on_soft and value <= 21:
+            if self.dealer_stand_on_soft <= value <= 21:
                 return 1  # STAND
         return 0  # HIT
 
-    def player_play(self, player, i=None, print_to_console=True):
-        turn_complete = False
-        while not turn_complete:
-            if print_to_console:
-                self.inputoutput.player_current_hand(player, self.deck_obj)
-
-                self.inputoutput.dealer_current_hand(self.dealer,
-                                                     self.deck_obj)
-
-            if player.hand_values == 'Blackjack':  # player has blackjack
-                self.inputoutput.blackjack()
-                turn_complete = True
+    def player_play(self, player, player_action, i=None,print_to_console=False):
+        self.turn_complete == False
+        if not self.turn_complete:
+            if 'Blackjack' in player.hand_values:  # player has blackjack
+                player.blackjack = True
+                self.turn_complete = True
             elif min(player.hand_values) > 21:  # player went bust
-                self.inputoutput.bust()
-                turn_complete = True
+                player.busted = True
+                self.turn_complete = True
             else:
                 # Check if player can split
                 split = False
 
                 if len(player.current_hand) == 2:
-                    card1 = self.deck_obj.card_num_or_face(
+                    card1 = self.deck_obj.get_card_value(
                         player.current_hand[0])
-                    card2 = (self.deck_obj.card_num_or_face(
+                    card2 = (self.deck_obj.get_card_value(
                         player.current_hand[1]))
-                    if card1 == card2:
+                    if card1 == card2 and card1 != 10:
                         split = True
 
                 # Check if player can insure
-                can_insure = False
+                '''can_insure = False
                 if self.dealer.current_hand[0] % 13 == 0:
                     if len(player.current_hand) == 2:
-                        can_insure = True
-
-                # Player action
-                if type(player) is Player or type(player) is Player_Split:
-                    player_action = self.inputoutput.get_player_input(
-                        player, split, can_insure, self.deck_obj,
-                        self.dealer, human_player=self.human_player)
-                elif type(player) is Dealer:
-                    player_action = self.get_dealer_input(player.hand_values)
-
+                        can_insure = True'''
+                        
                 if player_action == 0:  # HIT
                     print_to_console = False  # Don't print full hand next run
                     new_card = self.deal_card(player)  # Deal next card
-
-                    self.inputoutput.hit(new_card, self.deck_obj, player)
+                    return new_card
+                    #self.inputoutput.hit(new_card, self.deck_obj, player)
 
                 elif player_action == 1:  # STAND
-                    turn_complete = True
+                    self.turn_complete = True
                 elif player_action == 2:  # DOUBLE DOWN
                     # Double player's bet
                     assert (player.bankroll >= player.bet * 2) and (len(
@@ -298,228 +326,212 @@ class Blackjack():
 
                     # Deal new card
                     new_card = self.deal_card(player)  # Deal next card
-                    turn_complete = True  # User's turn complete
+                    self.turn_complete = True  # User's turn complete
 
                     # Output double down to player
                     self.inputoutput.double_down(new_card, self.deck_obj,
                                                  player)
 
                 elif player_action == 3:  # SPLIT
-                    assert (len(player.current_hand) == 2) and \
-                        (self.deck_obj.card_num_or_face(player.current_hand[0])
-                         == (self.deck_obj.card_num_or_face(player.
-                             current_hand[1])))
-                    # If player can split then create new player_split objects
-                    # for each and add them to self.players
-                    player_split_1 = Player_Split(player, 1)
-                    player_split_2 = Player_Split(player, 2)
+                    assert (len(player.current_hand) == 2) and (
+                            player.bankroll >= player.bet)
+                    new_player = Player_Split(player, player.num)
 
-                    # Update hand values
-                    self.update_hand_values(player_split_1)
-                    self.update_hand_values(player_split_2)
+                    # Transfer second card from first player's hand to new
+                    # player's hand
+                    new_player.current_hand.append(player.current_hand.pop())
+                    player.current_hand.append(
+                        self.deal_card(player))  # Deal next card
+                    new_player.current_hand.append(
+                        self.deal_card(new_player))  # Deal next card
 
-                    # Delete cards from original player's hand
-                    player.current_hand = []
+                    # Deduct bet from bankroll for new player
+                    new_player.bet = player.bet
+                    player.bankroll -= player.bet
 
-                    # Add new players to the self.players list so they are
-                    # called right after this loop
-                    for i, ele in enumerate(self.players):
-                        if ele is player:
-                            self.players.insert(i+1, player_split_1)
-                            self.players.insert(i+2, player_split_2)
+                    # Output split to player
+                    self.inputoutput.split(new_player, self.deck_obj)
 
-                    # Output split move to user
-                    self.inputoutput.split(player)
+                    # Play new player's hand
+                    self.player_play(new_player, print_to_console=False)
 
-                    turn_complete = True
+                elif player_action == 4:  # INSURANCE
+                    assert (player.bankroll >= player.bet / 2)
+                    player.insurance_bet = player.bet / 2
 
-                elif player_action == 4:  # SURRENDER
-                    # Must be first player move and whether works vs blackjack
-                    # is early/late parameter
-                    assert len(player.current_hand) <= 2
-                    player.hand_best_value = 'Surrender'
+                    self.inputoutput.insurance(player, self.dealer,
+                                               self.deck_obj)
 
-                    # Output surrender move to user
+                elif player_action == 5:  # SURRENDER
+                    assert self.late_surrender
+                    player.surrender = True
+
                     self.inputoutput.surrender(player)
 
-                    turn_complete = True
+                    # End player's turn
+                    self.turn_complete = True
 
-                elif player_action == 5:  # INSURANCE
-                    # Insurance against face up Ace gets you half bet back if
-                    # blackjack. Usually never optimal.
-                    # Note: insurance is only worthwhile if more 10 cards than
-                    # non in deck
-                    # Insure for half of current bet by default: could make
-                    # dynamic in future
-
-                    # First turn
-                    assert self.deck_obj.card_num_or_face(
-                        self.dealer.current_hand[0]) == 'Ace'  # First turn
-                    # Enough cash
-                    assert player.bankroll >= (player.bet + player.bet//2)
-                    # Insurance hasn't been taken
-                    assert player.insurance_bet == 0
-                    player.insurance_bet = player.bet//2
-
-                    # Output insurance move to user
-                    self.inputoutput.insurance(player)
-
-                else:
-                    raise ValueError('Error: player action is not an \
-                        integer 0-4')
-
-        if self.print_to_terminal:
-            print('')
+    def dealer_play(self):
+        # Dealer must hit if below 17
+        if min(self.dealer.hand_values) < 17:
+            new_card = self.deal_card(self.dealer, update_values=True)
+            return 'HIT', new_card
+        return 'STAND', None
 
     def compare_hands(self, player, dealer):
         # Takes in hands and returns and payout
 
         if player.hand_best_value == 'Blackjack':  # Player blackjack
             if dealer.hand_best_value == 'Blackjack':  # Dealer blackjack
-                return self.push_payout
+                return self.push_payout, 'tie'
             else:
                 return self.blackjack_payout
 
         if dealer.hand_best_value == 'Blackjack':  # Dealer only blackjack
             if player.hand_best_value == 'Surrender' and self.early_surrender:
-                return self.surrender_payout
+                return self.surrender_payout, 'Dealer'
             else:
-                return self.loss_payout
+                return self.loss_payout, 'Dealer'
 
         if player.hand_best_value == 'Surrender':  # Late surrender
-            return self.surrender_payout
+            return self.surrender_payout, 'Dealer'
 
         if player.hand_best_value > 21:  # Player went bust
-            return self.loss_payout
+            return self.loss_payout, 'Dealer'
         elif dealer.hand_best_value > 21:  # Dealer went bust
-            return self.win_payout
+            return self.win_payout, 'Player'
 
         if dealer.hand_best_value == player.hand_best_value:  # Same value
-            return self.push_payout
+            return self.push_payout, 'tie'
         elif player.hand_best_value > dealer.hand_best_value:  # Player >
-            return self.win_payout
+            return self.win_payout, 'Player'
         elif player.hand_best_value < dealer.hand_best_value:  # Dealer >
-            return self.loss_payout
+            return self.loss_payout, 'Dealer'
         else:
             raise ValueError('Error: player and dealer best value not \
                 compatible')
+    
+    def settle_bets(self):
+        dealer_value = self.dealer.hand_best_value
 
-    def discard_hand(self, player):
-        while len(player.current_hand) > 0:
-            self.deck_obj.discard_deck.append(player.current_hand.pop())
-
-    def discard_all_hands(self):
         for player in self.players:
-            self.discard_hand(player)
-        self.discard_hand(self.dealer)
+            player_payout, winner = self.compare_hands(player, self.dealer)
+            original_bankroll = player.bankroll
+            player.bankroll += player_payout * player.bet
+            # Any insurance
+            #insurance_payout = self.check_insurance_payout(player)
+            #player.bankroll += insurance_payout
+            # Reset player bet
+            player.bet = 0
+            player.insurance_bet = 0
+            player_value = player.hand_best_value
 
-    def take_bets(self):
-        # 1. Bet amount is logged into private variable
-        for player in self.players:
-            player.bet = self.inputoutput.get_user_bets(
-                player,
-                human_player=self.human_player
-                )
+            #if player.surrender:
+             #   player.bankroll += player.bet * self.surrender_payout
+                #self.inputoutput.settle_surrender(player, self.deck_obj)
 
-    def check_insurance_payout(self, player):
-        if player.insurance_bet > 0:
-            if self.dealer.hand_best_value == 'Blackjack':
-                return player.insurance_bet * 2
+            if player_value == 'Blackjack':
+                if dealer_value == 'Blackjack':
+                    player.bankroll += player.bet
+                    #self.inputoutput.settle_push(player, self.deck_obj)
+                else:
+                    player.bankroll += player.bet * self.blackjack_payout
+                    #self.inputoutput.settle_blackjack(player, self.deck_obj)
+
+            elif player_value == 'Surrender':
+                player.bankroll += player.bet * self.surrender_payout
+                #self.inputoutput.surrender(player)
+
+            elif player_value > 21:
+                player.bankroll += player.bet * self.loss_payout
+                #self.inputoutput.settle_bust(player, self.deck_obj)
+
+            elif dealer_value == 'Blackjack':
+                if player_value == 'Surrender' and self.early_surrender:
+                    player.bankroll += player.bet * self.surrender_payout
+                else:
+                    player.bankroll += player.bet * self.loss_payout
+
+            elif dealer_value > 21:
+                player.bankroll += player.bet * self.win_payout
+                #self.inputoutput.settle_win(player, self.deck_obj)
+
+            elif player_value > dealer_value:
+                player.bankroll += player.bet * self.win_payout
+                #self.inputoutput.settle_win(player, self.deck_obj)
+
+            elif player_value == dealer_value:
+                player.bankroll += player.bet * self.push_payout
+                #self.inputoutput.settle_push(player, self.deck_obj)
+
             else:
-                return player.insurane_bet * -1
-        return 0
+                player.bankroll += player.bet * self.loss_payout
+                #self.inputoutput.settle_loss(player, self.deck_obj)
+            self.players[0].bankroll = player.bankroll
+            return winner
 
-    def play_hand(self):
-        # 1. Start round
-        self.inputoutput.start_hand(self.round)
+    def play_round(self):
+        self.round += 1
+        self.deck_obj.shuffle()
 
-        # 2. Dealer gives 1 card to player (each player if multiple)
+        self.take_bets()
+
+        for _ in range(2):
+            for player in self.players + [self.dealer]:
+                self.deal_card(player)
+
         for player in self.players:
-            self.deal_card(player)
+            if player.hand_best_value == 21:
+                continue
+            self.player_play(player)
 
-        # 3. Dealer gives 1 card to themself face up
-        self.deal_card(self.dealer)
+        if not any(player.hand_best_value == 21 for player in self.players):
+            self.dealer_play()
 
-        # 4. Dealer gives 2nd card to player (each player if multiple)
-        for player in self.players:
-            self.deal_card(player)
-
-        # 5. Dealer gives 2nd card to themself. Dealt face down so don't
-        # reveal to player
-        self.deal_card(self.dealer)
-
-        # 6. Dealer peeks / does not peek for Blackjack
-        if self.dealer_peeks_for_bj and \
-           self.dealer.hand_best_value == 'Blackjack':
-            pass
-        else:
-            # 7. Players are prompted on move
-            for i, player in enumerate(self.players):
-                self.player_play(player, i)
-
-        # 8. Dealer plays
-        self.inputoutput.dealer_flip_card(self.dealer, self.deck_obj)
-
-        self.player_play(self.dealer, print_to_console=False)
-
-        # 9. Review player hands and payout money
-        for i, player in enumerate(self.players):
-            if len(player.current_hand) > 0:  # as long as hand wasn't split
-                # Get payout rate
-                player_payout = self.compare_hands(player, self.dealer)
-                original_bankroll = int(player.get_bankroll())
-                new_bankroll = int(original_bankroll +
-                                   player_payout * player.bet)
-
-                self.inputoutput.player_current_hand_vs_dealer(
-                    player, self.dealer, self.deck_obj)
-
-                self.inputoutput.payout(
-                    player, player_payout, original_bankroll, new_bankroll)
-
-                # Any insurance
-                insurance_payout = self.check_insurance_payout(player)
-                self.inputoutput.insurance_payout(player, insurance_payout)
-
-                # Update player bankroll
-                player.update_bankroll(
-                    player_payout * player.bet + insurance_payout)
-                player.bet = 0
-                player.insurance_bet = 0
-
+        self.settle_bets()
+        
+    def end_round(self):
         # 10. Put all cards into discard deck
         self.discard_all_hands()
-
-        # 11. Delete any split players
-        self.players = [player
-                        for player in self.players
-                        if type(player) is Player]
-        for player in self.players:
-            player.reset_children()
 
         # 12. Check if deck needs to be reshuffled
         pen = self.num_of_decks*52 * (1 - self.reshuffle_penetration)
         if len(self.deck_obj.deck) <= pen:
             self.shuffle(re_add_discard_deck=True)
 
+        return self.settle_bets()
         # 13. End round
-        self.inputoutput.end_hand(self.round)
+        #self.inputoutput.end_hand(self.round)
 
-    def is_game_over(self):
-        # Check if the game is over by iterating through players
-        for player in self.players:
-            if player.bankroll <= 0:
-                return True
-        return False
+    def discard_hand(self, player):
+        while len(player.current_hand) > 0:
+            self.deck_obj.discard_deck.append(player.current_hand.pop())
     
-    def play_round(self):
-        self.take_bets()
+    def discard_all_hands(self):
+        for player in self.players:
+            self.discard_hand(player)
+        self.discard_hand(self.dealer)
+    
+    def is_game_over(self):
+        # Example condition: game over if all players have no bankroll
+        return all(player.bankroll <= 0 for player in self.players)
 
-        self.play_hand()
-
-    def play_game(self, rounds=100):
-        self.inputoutput.welcome()
-
-        for rnd in range(rounds):
-            self.round = rnd+1
+    def simulate(self, num_rounds=1000):
+        for _ in range(num_rounds):
             self.play_round()
+
+    def calculate_bust_probability(self, player):
+        remaining_cards_count = sum(self.remaining_cards.values())
+        current_hand_value = min(player.hand_values)  # Use the minimum value to consider aces as 1
+        cards_needed_for_bust = 21 - current_hand_value
+        bust_cards_count = sum(count for value, count in self.remaining_cards.items() if value > cards_needed_for_bust)
+        return bust_cards_count / remaining_cards_count
+          
+    def main(self):
+        self.simulate()
+
+
+if __name__ == "__main__":
+    bj = Blackjack(["Player1"])
+    bj.blackjack_game = bj
+    bj.main()
